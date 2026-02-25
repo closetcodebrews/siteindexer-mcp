@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+siteindexer/ server.py
+siteindexer/__init__.py
+siteindexer/chunking.py
+siteindexer/crawl.py
+siteindexer/storage.py
+siteindexer_mcp.egg-info/PKG-INFO
+siteindexer_mcp.egg-info/SOURCES.txt
+siteindexer_mcp.egg-info/dependency_links.txt
+siteindexer_mcp.egg-info/requires.txt
+siteindexer_mcp.egg-info/top_level.txt
