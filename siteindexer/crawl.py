@@ -293,6 +293,11 @@ async def crawl_plan(
   Plan URLs using sitemap discovery when available; otherwise fall back to link crawl.
   """
   root_url = _normalize(root_url)
+
+  # Short-circuit: if we only want a single page, no crawling needed
+  if scope.mode == "page":
+    return [root_url]
+
   queue = [root_url]
   seen = set([root_url])
   planned: list[str] = []
