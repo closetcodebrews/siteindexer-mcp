@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import time
@@ -85,7 +86,12 @@ async def plan_index(
 @mcp.tool()
 async def run_index(plan_id: str) -> dict[str, Any]:
   """
-  Execute an approved plan: fetch -> extract -> chunk -> store.
+  Execute an approved indexing plan: fetches all planned URLs concurrently, extracts
+  text content, splits into chunks, and stores everything in the index.
+  Call plan_index first to get a plan_id.
+
+  Args:
+    plan_id: The plan_id returned by plan_index.
   """
   plan = storage.load_plan(plan_id)
   if not plan:
@@ -99,29 +105,39 @@ async def run_index(plan_id: str) -> dict[str, Any]:
   stored_chunks = 0
   failures: list[dict[str, Any]] = []
 
-  async with httpx.AsyncClient(headers={"User-Agent": "siteindexer/0.1"}) as client:
-    for u in urls:
+  # Semaphore caps concurrent requests at 5 to avoid overwhelming the target server
+  sem = asyncio.Semaphore(5)
+
+  async def fetch_and_index(client: httpx.AsyncClient, u: str) -> dict[str, Any]:
+    """Fetch a single URL, extract content, store page + chunks. Returns a result dict."""
+    async with sem:
       status, html = await fetch_html(client, u)
-      fetched += 1
 
-      if not html:
-        failures.append({"url": u, "status_code": status, "error": "No HTML fetched"})
-        storage.upsert_page(source_name=source_name, url=u, title=None, status_code=status, content_text=None)
-        continue
+    if not html:
+      storage.upsert_page(source_name=source_name, url=u, title=None, status_code=status, content_text=None)
+      return {"url": u, "ok": False, "status_code": status, "chunks": 0}
 
-      extracted = trafilatura.extract(html, include_comments=False, include_tables=True)
-      extracted = (extracted or "").strip()
-      title = trafilatura.extract_metadata(html).title if trafilatura.extract_metadata(html) else None
+    extracted = trafilatura.extract(html, include_comments=False, include_tables=True)
+    extracted = (extracted or "").strip()
+    meta = trafilatura.extract_metadata(html)
+    title = meta.title if meta else None
 
-      page_id = storage.upsert_page(source_name=source_name, url=u, title=title, status_code=status, content_text=extracted)
+    page_id = storage.upsert_page(source_name=source_name, url=u, title=title, status_code=status, content_text=extracted)
+    chunks = chunk_text(extracted)
+    storage.replace_chunks(page_id, [(c.index, c.heading_path, c.text) for c in chunks])
 
-      chunks = chunk_text(extracted)
-      storage.replace_chunks(
-        page_id,
-        [(c.index, c.heading_path, c.text) for c in chunks],
-      )
+    return {"url": u, "ok": True, "status_code": status, "chunks": len(chunks)}
+
+  async with httpx.AsyncClient(headers={"User-Agent": "siteindexer/0.1"}) as client:
+    results = await asyncio.gather(*[fetch_and_index(client, u) for u in urls])
+
+  fetched = len(results)
+  for r in results:
+    if r["ok"]:
       stored_pages += 1
-      stored_chunks += len(chunks)
+      stored_chunks += r["chunks"]
+    else:
+      failures.append({"url": r["url"], "status_code": r["status_code"], "error": "No HTML fetched"})
 
   finished = int(time.time())
   return {
@@ -183,8 +199,10 @@ async def get_page(source_name: str, url: str) -> dict[str, Any]:
 @mcp.tool()
 async def refresh(source_name: str, url: str, scope_mode: str = "subpath", max_pages: int = 25) -> dict[str, Any]:
   """
-  Convenience: plan + run in one call (you can keep this disabled if you prefer strict approval).
-  
+  Shortcut that combines plan_index and run_index in a single call, skipping the
+  approval gate. Useful for re-indexing a known source quickly. For new or large
+  sources, prefer plan_index first to review URLs before committing.
+
   Args:
     source_name: A unique identifier for this documentation source.
     url: The root URL to start indexing from.
@@ -198,16 +216,37 @@ async def refresh(source_name: str, url: str, scope_mode: str = "subpath", max_p
   
 @mcp.tool()
 async def db_list_tables() -> dict[str, Any]:
+  """List all tables in the siteindexer SQLite database. Useful for debugging and inspection."""
   return {"tables": storage.list_tables()}
 
 
 @mcp.tool()
 async def db_describe_table(table: str, limit: int = 5) -> dict[str, Any]:
+  """
+  Show the schema and sample rows for a specific database table.
+
+  Args:
+    table: The table name to describe (get names from db_list_tables).
+    limit: Number of sample rows to return (default 5).
+  """
   return storage.describe_table(table, limit=limit)
 
 
 @mcp.tool()
+async def delete_source(source_name: str) -> dict[str, Any]:
+  """
+  Delete all indexed data for a source (pages, chunks, plans).
+  Use this before re-indexing a source from scratch.
+
+  Args:
+    source_name: The source identifier to delete.
+  """
+  return storage.delete_source(source_name)
+
+
+@mcp.tool()
 async def list_sources() -> dict[str, Any]:
+  """List all indexed sources with page counts and first/last fetch timestamps."""
   return {"sources": storage.list_sources()}
 
 

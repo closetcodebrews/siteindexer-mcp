@@ -359,6 +359,23 @@ class Storage:
         "sample_rows": samples,
       }
 
+  def delete_source(self, source_name: str) -> dict[str, Any]:
+    """Delete all pages, chunks, and plans for a given source."""
+    validate_source_name(source_name)
+    with self._connect() as conn:
+      # Remove FTS rows first
+      conn.execute(
+        "DELETE FROM chunks_fts WHERE rowid IN (SELECT c.id FROM chunks c JOIN pages p ON p.id = c.page_id WHERE p.source_name = ?)",
+        (source_name,),
+      )
+      chunks_deleted = conn.execute(
+        "DELETE FROM chunks WHERE page_id IN (SELECT id FROM pages WHERE source_name = ?)",
+        (source_name,),
+      ).rowcount
+      pages_deleted = conn.execute("DELETE FROM pages WHERE source_name = ?", (source_name,)).rowcount
+      conn.execute("DELETE FROM plans WHERE source_name = ?", (source_name,))
+    return {"source_name": source_name, "pages_deleted": pages_deleted, "chunks_deleted": chunks_deleted}
+
   def list_sources(self) -> list[dict[str, Any]]:
     """List all indexed sources with stats."""
     with self._connect() as conn:
