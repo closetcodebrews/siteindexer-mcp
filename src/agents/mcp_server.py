@@ -11,9 +11,11 @@ import httpx
 import trafilatura
 from mcp.server.fastmcp import FastMCP
 
-from .chunking import chunk_text
-from .crawl import Scope, crawl_plan, fetch_html
-from .storage import Storage
+from src.core.reasoning import chunk_text
+from src.core.domain import Scope
+from src.environment.web_crawler import crawl_plan, fetch_html
+from src.environment.storage_env import Storage
+from config.settings import DEFAULT_DB
 
 # IMPORTANT: For stdio servers, never write to stdout; use logging to stderr. :contentReference[oaicite:2]{index=2}
 logging.basicConfig(level=logging.INFO)
@@ -21,7 +23,6 @@ log = logging.getLogger("siteindexer")
 
 mcp = FastMCP("siteindexer")
 
-DEFAULT_DB = os.environ.get("SITEINDEXER_DB", os.path.join(".siteindexer", "siteindexer.db"))
 storage = Storage(DEFAULT_DB)
 
 

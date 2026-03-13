@@ -4,7 +4,7 @@
 ```bash
 uv venv
 source .venv/bin/activate
-uv run -m siteindexer.server
+uv run -m src.agents.mcp_server
 ```
 
 ## Tools
@@ -29,7 +29,7 @@ rm -rf .siteindexer
 ## Running the project
 
 ```bash
-uv run -m siteindexer.server
+uv run -m src.agents.mcp_server
 ```
 
 ## Creating this project

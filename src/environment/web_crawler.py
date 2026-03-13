@@ -7,17 +7,11 @@ from typing import Optional
 from urllib.parse import urljoin, urldefrag, urlparse
 
 import httpx
+
+from src.core.domain import Scope
 from xml.etree import ElementTree as ET
 
 
-@dataclass(frozen=True)
-class Scope:
-  mode: str  # "page" | "subpath" | "domain"
-  root_url: str
-
-  @staticmethod
-  def from_dict(d: dict) -> "Scope":
-    return Scope(mode=str(d.get("mode", "page")), root_url=str(d["root_url"]))
 
 
 def _same_origin(a: str, b: str) -> bool:
@@ -293,31 +287,29 @@ async def crawl_plan(
   Plan URLs using sitemap discovery when available; otherwise fall back to link crawl.
   """
   root_url = _normalize(root_url)
-
-  # Short-circuit: if we only want a single page, no crawling needed
-  if scope.mode == "page":
-    return [root_url]
-
   queue = [root_url]
   seen = set([root_url])
   planned: list[str] = []
 
   async with httpx.AsyncClient(headers={"User-Agent": "siteindexer/0.1"}) as client:
-    # 1) Try sitemap-based discovery first (fast + complete)
-    sitemap_urls = await discover_sitemap_urls(client, root_url)
-    if sitemap_urls:
-      planned = await collect_urls_from_sitemaps(
-        client=client,
-        sitemap_urls=sitemap_urls,
-        scope=scope,
-        include=include,
-        exclude=exclude,
-        max_pages=max_pages,
-      )
-      if planned:
-        return planned
+    # 1) Sitemap discovery only makes sense for domain scope.
+    #    For subpath, link crawling from the root URL is faster and more accurate.
+    #    For page, we already returned early above.
+    if scope.mode == "domain":
+      sitemap_urls = await discover_sitemap_urls(client, root_url)
+      if sitemap_urls:
+        planned = await collect_urls_from_sitemaps(
+          client=client,
+          sitemap_urls=sitemap_urls,
+          scope=scope,
+          include=include,
+          exclude=exclude,
+          max_pages=max_pages,
+        )
+        if planned:
+          return planned
 
-    # 2) Fall back to link-based crawl
+    # 2) Fall back to link-based crawl (always used for subpath)
     while queue and len(planned) < max_pages:
       url = queue.pop(0)
       if not in_scope(url, scope):

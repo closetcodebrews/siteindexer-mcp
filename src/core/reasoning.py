@@ -1,15 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Iterable
-
-
-@dataclass(frozen=True)
-class Chunk:
-  index: int
-  heading_path: str | None
-  text: str
-
+from src.core.domain import Chunk
 
 def chunk_text(text: str, max_chars: int = 1400) -> list[Chunk]:
   """

@@ -11,3 +11,6 @@ dependencies = [
 ]
 [tool.uv]
 package = true
+
+[project.scripts]
+siteindexer-mcp = "src.agents.mcp_server:main"

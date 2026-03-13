@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+from src.core.domain import PageRow
+
 _SOURCE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]{2,32}$")
 
 def validate_source_name(source_name: str) -> None:
@@ -76,14 +78,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_plans_source_name ON plans(source_name);
 
 
 
-@dataclass(frozen=True)
-class PageRow:
-  id: int
-  url: str
-  title: Optional[str]
-  fetched_at: int
-  status_code: Optional[int]
-  content_text: Optional[str]
 
 
 class Storage:
